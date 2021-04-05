@@ -2,48 +2,19 @@
 package icsv
 
 import (
-	"bytes"
-	// "encoding/csv"
 	"fmt"
-	"io"
-	"os"
 	"strings"
 	"testing"
 )
 
-func aTest0(t *testing.T) {
-	t.Errorf("os.args=%#v", os.Args)
-	// t.Fail()
-}
-
-func test2(t *testing.T, txt1 string, sr *Reader, expect [][]string) {
-	rtn, err := sr.ReadAll()
-	if err != nil {
-		t.Errorf("err=%#v", err)
-	}
-	for i, rtnRow := range rtn {
-		for j, rtnCell := range rtnRow {
-			if rtnCell != expect[i][j] {
-				t.Errorf("txt=%#v", txt1)
-				t.Errorf("expect=%#v", expect)
-				t.Errorf("actural    =%#v", rtn)
-				break
-			}
-		}
-	}
-
-}
-
-func test1(t *testing.T, txt1 string, sr *Reader, expect [][]string) {
+func verify(t *testing.T, text string, sr *Reader, expect [][]string) {
 	rtn, err := sr.ReadAll()
 	if err != nil {
 		t.Errorf("err=%#v", err)
 	}
 
-	// fmt.Printf("%#v\n", txt1)
-	// fmt.Printf("%#v\n", rtn)
 	if fmt.Sprintf("%#v", rtn) != fmt.Sprintf("%#v", expect) {
-		t.Errorf("txt=%#v", txt1)
+		t.Errorf("txt=%#v", text)
 		t.Errorf("expect =%#v", expect)
 		t.Errorf("actural=%#v", rtn)
 	}
@@ -78,11 +49,11 @@ func Test1(t *testing.T) {
 		*/
 	 }
 
-	for txt1, expect := range tests {
-		r := NewReader(strings.NewReader(txt1))
+	for text, expect := range tests {
+		r := NewReader(strings.NewReader(text))
 		r.Comma = ','
 		r.Terminator = '\n'
-		test1(t, txt1, r, expect)
+		verify(t, text, r, expect)
 	}
 }
 
@@ -150,8 +121,8 @@ func Test2(t *testing.T) {
 		*/
 	 }
 
-	for txt1, expect := range tests {
-		r := NewReader(strings.NewReader(txt1))
+	for text, expect := range tests {
+		r := NewReader(strings.NewReader(text))
 
 		r.Comma = ','
 		r.Quote = '"'
@@ -163,35 +134,6 @@ func Test2(t *testing.T) {
 		r.TrailingTrim = "\n\r \t"
 		r.CharMapping ="口 "
 
-		test1(t, txt1, r, expect)
-	}
-}
-
-
-
-func aTest2(t *testing.T) {
-	// copy one io stream to two file
-	txt1 := "\nHello-\n"
-	sr := strings.NewReader(txt1)
-	var buf bytes.Buffer
-	tr := io.TeeReader(sr, &buf)
-	// io.Copy(os.Stderr, sr)
-	io.Copy(os.Stdout, tr)
-}
-
-func aTest9(t *testing.T) {
-	var tests = []struct {
-		in  int
-		out int
-	}{
-		{1, 1},
-		{2, 2},
-		{3, 4},
-	}
-	for i, tt := range tests {
-		if tt.in != tt.out {
-			t.Errorf("test %d: %#v != %#v", i, tt.in, tt.out)
-			// t.Fail()
-		}
+		verify(t, text, r, expect)
 	}
 }
