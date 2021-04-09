@@ -13,6 +13,7 @@ For reading csv, it can be configured for:
 * Leading characters to trim;
 * Trailing characters to trim;
 * Characters remapping;
+* Max quoted string length;
 
 Installation
 ------------
