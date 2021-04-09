@@ -15,10 +15,12 @@ For reading csv, it can be configured for:
 * Characters remapping;
 * Max quoted string length;
 
+It also ignores unicode BOM header and empty lines.
+
 Installation
 ------------
 
-    go get github.com/jooter/icsv
+    go get -u github.com/jooter/icsv
 
 Requirements
 -------------
