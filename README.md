@@ -8,7 +8,7 @@ This package is a simple and powerful alternative of buildin encoding/csv packag
 
 For reading csv, it can be configured for:
 * Record terminator;
-* Escape charactor;
+* Escape character;
 * Quotation mark;
 * Leading characters to trim;
 * Trailing characters to trim;
