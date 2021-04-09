@@ -18,6 +18,7 @@ type Reader struct {
 	Quote      rune //  default "
 	Escape     rune //  default \
 	Terminator rune //  default \n
+	MaxQuoted  int  //  default 128
 
 	// Trim white space or any char
 	// for example char in `"'\n\r\t ,|;`
@@ -88,10 +89,16 @@ func (r *Reader) readCell() (cellStr string, recordEnd uint8, err error) {
 	addToCell := func() {
 		charNo += 1
 		cell = append(cell, charRemap(ch))
+		if startQuot && charNo > r.MaxQuoted {
+			err = CsvParsingError
+		}
 	}
 
 Loop:
 	for {
+		if err != nil {
+			break
+		}
 		ch, sz, err = r.r.ReadRune()
 		readNo++
 		r.col++
@@ -292,6 +299,7 @@ func NewReader(r io.Reader) *Reader {
 		r:          bufio.NewReader(r),
 		Terminator: '\n',
 		Comma:      ',',
+		MaxQuoted:  128,
 		// Quote: '"',
 		// AroundTrim: "\n\r \t",
 		// CharMapping: "\n \r \t ,.",

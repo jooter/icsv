@@ -111,9 +111,11 @@ func Test2(t *testing.T) {
 
 		// Error cases
 		// unclosed quote upto end of file, or upto max cell size
-		`" `: [][]string(nil),           // error to be raised
-		`"a`: [][]string{[]string{`a`}}, // error to be raised
-		// `"a"b"c`: [][]string{[]string{`a`}},  // error to be raised
+		`" `:      [][]string(nil),              // error to be raised
+		`"a`:      [][]string{[]string{`a`}},    // error to be raised
+		`"a,`:     [][]string{[]string{`a,`}},   // error to be raised
+		`"a"b"c`:  [][]string{[]string{`ab"c`}}, // error to be raised
+		`"a""b"c`: [][]string{[]string{`a"bc`}}, // error to be raised
 		// first quote is not at beginning of the cell
 		`a,b"`: [][]string{[]string{`a`, `b`}}, // error to be raised
 		/*
