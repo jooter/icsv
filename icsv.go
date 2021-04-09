@@ -2,74 +2,74 @@ package icsv
 
 import (
 	"bufio"
-	"fmt"
 	"errors"
 	"io"
 )
 
-// Reference: 
-// https://github.com/csvreader/csvreader/blob/master/DIALECTS.md
-
 type Reader struct {
-	Comma rune
-	FieldsPerRecord int
-	Comment rune // #
+	r *bufio.Reader
 
-	Quote rune  //  "
-	Escape rune //  \
-	Terminator rune  // \r \n
+	// attributes in standard package
+	Comma           rune // default ,
+	FieldsPerRecord int
+	Comment         rune // default #
+
+	// extra attributes
+	Quote      rune //  default "
+	Escape     rune //  default \
+	Terminator rune //  default \n
 
 	// Trim white space or any char
 	// for example char in `"'\n\r\t ,|;`
-	AroundTrim string // default "'\n\r\t\" ,|;"
-	LeadingTrim string // extra for leading trim
+	AroundTrim   string // default "'\n\r\t\" ,|;"
+	LeadingTrim  string // extra for leading trim
 	TrailingTrim string // extra for trailing trim
+	leadingTrim  map[rune]bool
+	trailingTrim map[rune]bool
 
-	CharMapping string // "\n ,-"
+	CharMapping string        // "\n ,-"
 	charMapping map[rune]rune // {'\n': ' ', ',':'-'}
+
+	// internal variables
+	beginFlag bool // for trimming BOM
+	lastChar  rune
+
+	cellNo   int
+	recordNo int
+	line     int // line number
+	col      int // col number
+	// initialized bool
+	// columnCount int
+	// lineNum int
+	// lineTxt string
+
+	// Future attributes
 	// Replace [][]string  // [[`""`, `"`]]
 	// Report string
 
 	// if there is no new line at the end of line
 	// 0: do nothing, 1: warning, 2: error
-	NewLineEOF uint8
+	// NewLineEOF uint8
 
 	// BufferSize int // use for detecting csv config
 	// Dialect string  // rcf, excel, mysql, postgres, informix, probe
 	// Delimiter string  // , \t | ||
-
-	r *bufio.Reader
-
-	leadingTrim map[rune]bool
-	trailingTrim map[rune]bool
-	beginFlag bool // for trimming BOM
-	lastChar rune
-
-	// initialized bool
-	// columnCount int
-	// lineNum int
-	// lineTxt string
-	cellNo int
-	recordNo int
-	line int // line number
-	col int // col number
 }
 
 const BOM rune = 65279
 
 var (
-	// This is a signal, not real error
 	CsvParsingError = errors.New("csv parsing error")
 )
 
 // Read till end of cell
 // return: a cell, end of record or other error
-func (r *Reader) readCell () (cellStr string, recordEnd uint8, err error) {
-	readNo := 0 // char number in the read loop
-	charNo := -1 // char number of a cell
-	var ch rune // char
-	var sz int  // size of char
-	var cell []rune  // data cell
+func (r *Reader) readCell() (cellStr string, recordEnd uint8, err error) {
+	readNo := 0     // char number in the read loop
+	charNo := -1    // char number of a cell
+	var ch rune     // char
+	var sz int      // size of char
+	var cell []rune // data cell
 
 	// flags and cursors
 	var comment bool
@@ -78,25 +78,23 @@ func (r *Reader) readCell () (cellStr string, recordEnd uint8, err error) {
 	var endQuotIdx int
 	var escape bool
 
-	charRemap := func (ch rune) rune {
+	charRemap := func(ch rune) rune {
 		if val, ok := r.charMapping[ch]; ok {
 			return val
 		}
 		return ch
 	}
 
-	addToCell := func () {
+	addToCell := func() {
 		charNo += 1
 		cell = append(cell, charRemap(ch))
 	}
 
-
-	Loop:
+Loop:
 	for {
 		ch, sz, err = r.r.ReadRune()
 		readNo++
 		r.col++
-		// fmt.Printf("ch=%d,po=%d,err=%v,startQuot=%v\n", ch, charNo, err, startQuot)
 
 		// recordEnd=0: record is not ended
 		// =1: when "...a\n..." // more lines to be read
@@ -109,7 +107,7 @@ func (r *Reader) readCell () (cellStr string, recordEnd uint8, err error) {
 			if r.lastChar == '\n' {
 				recordEnd = 3
 			}
-			if readNo>1 && charNo==-1 {
+			if readNo > 1 && charNo == -1 {
 				recordEnd = 4
 			}
 			if r.lastChar == 0 {
@@ -122,15 +120,15 @@ func (r *Reader) readCell () (cellStr string, recordEnd uint8, err error) {
 
 		if ch == r.Terminator {
 			r.line++
-			r.col=0
+			r.col = 0
 		}
 
-		if ! r.beginFlag {
+		if !r.beginFlag {
 			r.beginFlag = true
 			r.trimMap()
 
 			// skip BOM 0xEF,0xBB,0xBF
-			if ch==BOM {
+			if ch == BOM {
 				continue
 			}
 		}
@@ -143,28 +141,28 @@ func (r *Reader) readCell () (cellStr string, recordEnd uint8, err error) {
 		case escape:
 			escape = false
 			// next escape tokens will tread as normal char
-			// \"=>"  \,=>, 
+			// \"=>"  \,=>,
 			addToCell()
 			break
 
 		// skip empty line
-		case r.cellNo==0 && charNo==-1 && ch==r.Terminator:
+		case r.cellNo == 0 && charNo == -1 && ch == r.Terminator:
 			break
 
 		// if not in quotation string
-		case ! startQuot && ch==r.Comma:  // end of cell if not in quoted string
+		case !startQuot && ch == r.Comma: // end of cell if not in quoted string
 			break Loop
-		case ! startQuot && ch==r.Terminator:  // end of cell and record if not in quoted string
+		case !startQuot && ch == r.Terminator: // end of cell and record if not in quoted string
 			recordEnd = 1
 			break Loop
-		case ! startQuot && ch==r.Quote:  // start quoted string 
+		case !startQuot && ch == r.Quote: // start quoted string
 			startQuot = true
 			break
-		case ! startQuot && ch==r.Comment:  // start comment
+		case !startQuot && ch == r.Comment: // start comment
 			comment = true
 			break
 
-		case ch==r.Escape && ! escape:  // escape token
+		case ch == r.Escape && !escape: // escape token
 			escape = true
 			break
 
@@ -174,19 +172,19 @@ func (r *Reader) readCell () (cellStr string, recordEnd uint8, err error) {
 
 		// if in quotation string
 		// this could be the 2nd quotation mark or the 4th
-		case ch==r.Quote && startQuot && ! endQuot:
+		case ch == r.Quote && startQuot && !endQuot:
 			endQuotIdx = readNo
 			endQuot = true
 			break
 		// this is just next to the 2nd quotation mark,
 		// this is the end of quoted string and the end of the cell
-		case ch==r.Comma && startQuot && endQuot && readNo == endQuotIdx + 1:
+		case ch == r.Comma && startQuot && endQuot && readNo == endQuotIdx+1:
 			startQuot = false
 			endQuot = false
 			break Loop
 		// same as above this is just next to the 2nd quotation mark,
 		// "" double quotation marks means one in rcf csv standard
-		case ch==r.Quote && startQuot && endQuot && readNo == endQuotIdx + 1:
+		case ch == r.Quote && startQuot && endQuot && readNo == endQuotIdx+1:
 			endQuot = false
 			addToCell()
 			break
@@ -195,7 +193,7 @@ func (r *Reader) readCell () (cellStr string, recordEnd uint8, err error) {
 		}
 	}
 
-	for i0 := charNo; i0>=0; i0-- {
+	for i0 := charNo; i0 >= 0; i0-- {
 		if r.trailingTrim[cell[i0]] {
 			charNo = i0 - 1
 		} else {
@@ -208,20 +206,21 @@ func (r *Reader) readCell () (cellStr string, recordEnd uint8, err error) {
 }
 
 // helper function
-func stringToCharBool (rtn map[rune]bool, s string) {
+func stringToCharBool(rtn map[rune]bool, s string) {
 	for _, c := range s {
 		rtn[c] = true
 	}
 }
 
-func stringToCharMap (rtn map[rune]rune, str string) {
+// helper function
+func stringToCharMap(rtn map[rune]rune, str string) {
 	var s []rune
 	for _, c := range str {
 		s = append(s, c)
 	}
 
 	l := len(s)
-	for i:=0; i<l/2; i++ {
+	for i := 0; i < l/2; i++ {
 		rtn[s[i]] = s[i+1]
 	}
 }
@@ -236,7 +235,6 @@ func (r *Reader) trimMap() {
 	stringToCharBool(r.trailingTrim, r.AroundTrim)
 	stringToCharBool(r.leadingTrim, r.LeadingTrim)
 	stringToCharBool(r.trailingTrim, r.TrailingTrim)
-	// fmt.Printf("trim=%#v\n", r.leadingTrim)
 }
 
 // Read till end of line or end of file
@@ -248,7 +246,6 @@ func (r *Reader) Read() (rec []string, err error) {
 
 	for {
 		cell, recordEnd, err = r.readCell()
-		// fmt.Printf("end=%d\terr=%#v\n", recordEnd, err)
 		if recordEnd > 2 {
 			break
 		}
@@ -260,7 +257,6 @@ func (r *Reader) Read() (rec []string, err error) {
 			break
 		}
 		if err != nil {
-			fmt.Printf("end=%d\terr=%#v\n", recordEnd, err)
 			break
 		}
 	}
@@ -287,25 +283,20 @@ func (r *Reader) ReadAll() (records [][]string, err error) {
 			break
 		}
 	}
-	// fmt.Printf("rec=%#v\terr=%#v\n", records, err)
-	// fmt.Printf("rec=%#v\tcell=%d\tline=%d\tcol=%d\terr=%#v\n", 
-	// r.recordNo, r.cellNo, 
-	// r.line, r.col,
-	// err)
 	return
 }
 
 // NewReader returns a new Reader that reads from r.
 func NewReader(r io.Reader) *Reader {
 	return &Reader{
-		r:     bufio.NewReader(r),
-		// Comma: ',',
+		r:          bufio.NewReader(r),
+		Terminator: '\n',
+		Comma:      ',',
 		// Quote: '"',
+		// AroundTrim: "\n\r \t",
+		// CharMapping: "\n \r \t ,.",
 		// Escape: '\\',
 		// Comment:  '#',
-		// Terminator: '\n',
 		// AroundTrim: "\n\r\t \",",
-		// AroundTrim: "\n\r \t",
-		// CharMapping: "\n \r \t ,-|-'-"-"
 	}
 }
