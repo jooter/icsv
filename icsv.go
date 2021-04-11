@@ -1,3 +1,4 @@
+// package icsv is an alternative of encoding/csv.
 package icsv
 
 import (
@@ -20,6 +21,7 @@ type Reader struct {
 	Terminator rune //  default \n
 	MaxQuoted  int  //  default 128
 
+	// more extra attributes
 	// Trim white space or any char
 	// for example char in `"'\n\r\t ,|;`
 	AroundTrim   string // default "'\n\r\t\" ,|;"
@@ -31,7 +33,7 @@ type Reader struct {
 	CharMapping string        // "\n ,-"
 	charMapping map[rune]rune // {'\n': ' ', ',':'-'}
 
-	// internal variables
+	// internal status
 	beginFlag bool // for trimming BOM
 	lastChar  rune
 
@@ -57,11 +59,76 @@ type Reader struct {
 	// Delimiter string  // , \t | ||
 }
 
-const BOM rune = 65279
+const const_bom rune = 65279
 
 var (
-	CsvParsingError = errors.New("csv parsing error")
+	ErrorParsing = errors.New("csv parsing error")
 )
+
+// NewReader returns a new Reader that reads from r.
+func NewReader(r io.Reader) *Reader {
+	return &Reader{
+		r:          bufio.NewReader(r),
+		Terminator: '\n',
+		Comma:      ',',
+		MaxQuoted:  128,
+		// Quote: '"',
+		// AroundTrim: "\n\r \t",
+		// CharMapping: "\n \r \t ,.",
+		// Escape: '\\',
+		// Comment:  '#',
+		// AroundTrim: "\n\r\t \",",
+	}
+}
+
+// ReadAll
+// return: all records
+func (r *Reader) ReadAll() (records [][]string, err error) {
+	for {
+		rec, err := r.Read()
+		if rec != nil {
+			records = append(records, rec)
+		}
+		if err != nil {
+			if err == io.EOF {
+				err = nil
+			}
+			break
+		}
+	}
+	return
+}
+
+// Read till end of line or end of file
+// return: a record, end of file or other error
+func (r *Reader) Read() (rec []string, err error) {
+	var cell string
+	var recordEnd uint8
+	r.cellNo = 0
+
+	for {
+		cell, recordEnd, err = r.readCell()
+		if recordEnd > 2 {
+			break
+		}
+
+		r.cellNo++
+		rec = append(rec, cell)
+
+		if recordEnd > 0 {
+			break
+		}
+		if err != nil {
+			break
+		}
+	}
+
+	if r.cellNo > 0 {
+		r.recordNo++
+	}
+
+	return
+}
 
 // Read till end of cell
 // return: a cell, end of record or other error
@@ -90,7 +157,7 @@ func (r *Reader) readCell() (cellStr string, recordEnd uint8, err error) {
 		charNo += 1
 		cell = append(cell, charRemap(ch))
 		if startQuot && charNo > r.MaxQuoted {
-			err = CsvParsingError
+			err = ErrorParsing
 		}
 	}
 
@@ -135,7 +202,7 @@ Loop:
 			r.trimMap()
 
 			// skip BOM 0xEF,0xBB,0xBF
-			if ch == BOM {
+			if ch == const_bom {
 				continue
 			}
 		}
@@ -150,7 +217,6 @@ Loop:
 			// next escape tokens will tread as normal char
 			// \"=>"  \,=>,
 			addToCell()
-			break
 
 		// skip empty line
 		case r.cellNo == 0 && charNo == -1 && ch == r.Terminator:
@@ -164,14 +230,11 @@ Loop:
 			break Loop
 		case !startQuot && ch == r.Quote: // start quoted string
 			startQuot = true
-			break
 		case !startQuot && ch == r.Comment: // start comment
 			comment = true
-			break
 
 		case ch == r.Escape && !escape: // escape token
 			escape = true
-			break
 
 		// trim leading space
 		case charNo == -1 && r.leadingTrim[ch]:
@@ -182,7 +245,6 @@ Loop:
 		case ch == r.Quote && startQuot && !endQuot:
 			endQuotIdx = readNo
 			endQuot = true
-			break
 		// this is just next to the 2nd quotation mark,
 		// this is the end of quoted string and the end of the cell
 		case ch == r.Comma && startQuot && endQuot && readNo == endQuotIdx+1:
@@ -194,7 +256,6 @@ Loop:
 		case ch == r.Quote && startQuot && endQuot && readNo == endQuotIdx+1:
 			endQuot = false
 			addToCell()
-			break
 		default:
 			addToCell()
 		}
@@ -210,6 +271,18 @@ Loop:
 
 	cellStr = string(cell[:charNo+1])
 	return
+}
+
+// Initialize maps for trim cell string
+func (r *Reader) trimMap() {
+	r.charMapping = make(map[rune]rune)
+	r.leadingTrim = make(map[rune]bool)
+	r.trailingTrim = make(map[rune]bool)
+	stringToCharMap(r.charMapping, r.CharMapping)
+	stringToCharBool(r.leadingTrim, r.AroundTrim)
+	stringToCharBool(r.trailingTrim, r.AroundTrim)
+	stringToCharBool(r.leadingTrim, r.LeadingTrim)
+	stringToCharBool(r.trailingTrim, r.TrailingTrim)
 }
 
 // helper function
@@ -229,82 +302,5 @@ func stringToCharMap(rtn map[rune]rune, str string) {
 	l := len(s)
 	for i := 0; i < l/2; i++ {
 		rtn[s[i]] = s[i+1]
-	}
-}
-
-// Initialize maps for trim cell string
-func (r *Reader) trimMap() {
-	r.charMapping = make(map[rune]rune)
-	r.leadingTrim = make(map[rune]bool)
-	r.trailingTrim = make(map[rune]bool)
-	stringToCharMap(r.charMapping, r.CharMapping)
-	stringToCharBool(r.leadingTrim, r.AroundTrim)
-	stringToCharBool(r.trailingTrim, r.AroundTrim)
-	stringToCharBool(r.leadingTrim, r.LeadingTrim)
-	stringToCharBool(r.trailingTrim, r.TrailingTrim)
-}
-
-// Read till end of line or end of file
-// return: a record, end of file or other error
-func (r *Reader) Read() (rec []string, err error) {
-	var cell string
-	var recordEnd uint8
-	r.cellNo = 0
-
-	for {
-		cell, recordEnd, err = r.readCell()
-		if recordEnd > 2 {
-			break
-		}
-
-		r.cellNo++
-		rec = append(rec, cell)
-
-		if recordEnd > 0 {
-			break
-		}
-		if err != nil {
-			break
-		}
-	}
-
-	if r.cellNo > 0 {
-		r.recordNo++
-	}
-
-	return
-}
-
-// Read All
-// return: all records
-func (r *Reader) ReadAll() (records [][]string, err error) {
-	for {
-		rec, err := r.Read()
-		if rec != nil {
-			records = append(records, rec)
-		}
-		if err != nil {
-			if err == io.EOF {
-				err = nil
-			}
-			break
-		}
-	}
-	return
-}
-
-// NewReader returns a new Reader that reads from r.
-func NewReader(r io.Reader) *Reader {
-	return &Reader{
-		r:          bufio.NewReader(r),
-		Terminator: '\n',
-		Comma:      ',',
-		MaxQuoted:  128,
-		// Quote: '"',
-		// AroundTrim: "\n\r \t",
-		// CharMapping: "\n \r \t ,.",
-		// Escape: '\\',
-		// Comment:  '#',
-		// AroundTrim: "\n\r\t \",",
 	}
 }
