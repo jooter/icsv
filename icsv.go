@@ -59,7 +59,9 @@ type Reader struct {
 	// Delimiter string  // , \t | ||
 }
 
-const const_bom rune = 65279
+const (
+	const_bom rune = 65279
+)
 
 var (
 	ErrorParsing = errors.New("csv parsing error")
